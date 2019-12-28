@@ -46,21 +46,22 @@ main(void)
 	int		 udp_s;
 	int		 i, resend_c = ResetAfter;
 
-#ifdef USE_PLEDGE
-	if (pledge("stdio inet", NULL) == -1)
-		err(1, "pledge");
-#endif
+	if (setrlimit(RLIMIT_NOFILE, &nofile) == -1)
+		err(1, "setrlimit");
+	for (i = 0; i < OpenMax; ++i)
+		if (i != STDERR_FILENO)
+			close(i);
 #ifdef USE_UNVEIL
 	if (unveil("/", "") == -1)
 		err(1, "unveil");
 	if (unveil(NULL, NULL) == -1)
 		err(1, "unveil");
 #endif
-	if (setrlimit(RLIMIT_NOFILE, &nofile) == -1)
-		err(1, "setrlimit");
-	for (i = 0; i < OpenMax; ++i)
-		if (i != STDERR_FILENO)
-			close(i);
+#ifdef USE_PLEDGE
+	if (pledge("stdio inet", NULL) == -1)
+		err(1, "pledge");
+#endif
+
 	if ((udp_s = socket(server_ai)) == -1)
 		err(1, "socket");
 	if (bind(udp_s, server_ai) == -1)
