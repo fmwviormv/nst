@@ -13,6 +13,8 @@
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  */
+#define _POSIX_C_SOURCE	200809L
+
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>

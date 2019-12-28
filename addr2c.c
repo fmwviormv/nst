@@ -13,6 +13,8 @@
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  */
+#define _POSIX_C_SOURCE	200809L
+
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -96,7 +98,7 @@ getaddr(const char *const type, const char *const host,
 void
 print(const char *const name, const void *const p, const size_t size)
 {
-	printf("static const unsigned char _%s[] = {", name);
+	printf("\nstatic const unsigned char _%s[] = {", name);
 
 	for (size_t i = 0; i < size; ++i) {
 		if (i != 0)
@@ -111,6 +113,6 @@ print(const char *const name, const void *const p, const size_t size)
 	    "\t.ai_protocol = %d, /* %s */\n"
 	    "\t.ai_addrlen = (socklen_t)sizeof(_%s),\n"
 	    "\t.ai_addr = (struct sockaddr *)_%s\n"
-	    "};\n\n", name, family, socktype,
+	    "};\n", name, family, socktype,
 	    protocol->p_proto, protocol->p_name, name, name);
 }

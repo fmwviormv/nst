@@ -1,8 +1,8 @@
 .POSIX:
 CFLAGS+= -std=c99 -pedantic -Wall -Wextra -Werror
 PACKAGES+= libcrypto
-#PACKAGES+= libbsd
-CFLAGS+= -DUSE_PLEDGE -DUSE_UNVEIL
+#PACKAGES+= libbsd-overlay
+CFLAGS+= -D_BSD_SOURCE -DUSE_PLEDGE -DUSE_UNVEIL
 PACKAGES_CFLAGS!= pkg-config --cflags $(PACKAGES)
 PACKAGES_LDFLAGS!= pkg-config --libs $(PACKAGES)
 CFLAGS+= $(PACKAGES_CFLAGS)
@@ -25,7 +25,9 @@ addr2c: addr2c.o
 nstc.o nstd.o msg.o addr2c.o: msg.h
 
 addr.c: addr2c Makefile
-	printf '#include <sys/socket.h>\n#include <netdb.h>\n\n' >addr.t
+	echo '#define _POSIX_C_SOURCE 200809L'	>addr.t
+	echo '#include <sys/socket.h>'		>>addr.t
+	echo '#include <netdb.h>'		>>addr.t
 	./addr2c client_ai	udp	127.0.0.1	8001 >>addr.t
 	./addr2c server_ai	udp	127.0.0.1	8002 >>addr.t
 	./addr2c listen_ai	tcp	127.0.0.1	8003 >>addr.t
