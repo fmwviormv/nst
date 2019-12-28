@@ -11,7 +11,7 @@ LDFLAGS+= $(PACKAGES_LDFLAGS)
 all: nstc nstd
 
 clean:
-	rm -f nstc{.o,} nstd{.o,} addr2c{.o,} msg.o addr.{t,c,o}
+	rm -f {nstc,nstd,addr2c,msg}{.o,.core,} addr.{t,c,o}
 
 nstc: nstc.o msg.o addr.o
 	$(CC) $(LDFLAGS) -o $@ nstc.o msg.o addr.o
