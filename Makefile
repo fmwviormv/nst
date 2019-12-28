@@ -19,7 +19,10 @@ nstc: nstc.o msg.o addr.o
 nstd: nstd.o msg.o addr.o
 	$(CC) $(LDFLAGS) -o $@ nstd.o msg.o addr.o
 
-nstc.o nstd.o msg.o: msg.h
+addr2c: addr2c.o
+	$(CC) $(LDFLAGS) -o $@ addr2c.o
+
+nstc.o nstd.o msg.o addr2c.o: msg.h
 
 addr.c: addr2c Makefile
 	printf '#include <sys/socket.h>\n#include <netdb.h>\n\n' >addr.t

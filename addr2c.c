@@ -13,6 +13,7 @@
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  */
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
@@ -20,6 +21,9 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+
+#include "msg.h"
 
 void		 getaddr(const char *, const char *, const char *);
 void		 print(const char *, const void *, size_t);
@@ -34,6 +38,8 @@ main(const int argc, const char *const *const argv)
 {
 	if (argc != 5)
 		errx(1, "bad args");
+	else if (FD_SETSIZE < OpenMax)
+		errx(1, "fd_set is too small");
 
 	getaddr(argv[2], argv[3], argv[4]);
 	print(argv[1], ai->ai_addr, (size_t)ai->ai_addrlen);
