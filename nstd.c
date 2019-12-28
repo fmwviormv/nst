@@ -220,29 +220,20 @@ proc_message(void)
 	for (i = 0; i < PeersMax; ++i) {
 		int		 s = peer[i].s;
 		if (s < 0 && peer[i].recv.open) {
+			peer[i].free = 0;
+			peer[i].recv.open = 0;
 			peer[i].send.size = 0;
 
 			if ((s = socket(connect_ai)) == -1) {
 				warn("socket");
-				peer[i].recv.open = 0;
 				peer[i].send.close = 1;
-				continue;
-			}
-
-			if (connect(s, connect_ai) != -1) {
-				peer[i].free = 0;
-				peer[i].dontsend = 0;
-				peer[i].s = s;
-				peer[i].recv.open = 0;
-			} else if (errno == EINTR) {
-				peer[i].free = 0;
-				peer[i].dontsend = 0;
-				peer[i].s = s;
-			} else {
+			} else if (connect(s, connect_ai) == -1) {
 				warn("connect");
 				close(s);
-				peer[i].recv.open = 0;
 				peer[i].send.close = 1;
+			} else {
+				peer[i].dontsend = 0;
+				peer[i].s = s;
 			}
 		}
 	}
