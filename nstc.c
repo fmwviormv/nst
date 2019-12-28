@@ -31,8 +31,9 @@
 
 #define socket(a)	socket(a.ai_family,a.ai_socktype,a.ai_protocol)
 #define bind(s,a)	bind(s, a.ai_addr, a.ai_addrlen)
+#define select(r,w,t)	select(OpenMax, r, w, NULL, t)
 
-void		 send_reset(int);
+void		 send_reset(int, enum Msg);
 void		 recv_message(int, int, struct timeval *);
 void		 proc_message(void);
 
@@ -50,6 +51,8 @@ main(void)
 	for (i = 0; i < OpenMax; ++i)
 		if (i != STDERR_FILENO)
 			close(i);
+	for (i = 0; i < PeersMax; ++i)
+		peer[i].s = -1;
 #ifdef USE_UNVEIL
 	if (unveil("/", "") == -1)
 		err(1, "unveil");
@@ -73,14 +76,16 @@ main(void)
 	if (listen(tcp_s, 2) == -1)
 		err(1, "listen");
 
-	close(STDERR_FILENO); /* we need that filedescriptor :D */
+	send_reset(udp_s, Msg_Reset);
 	msg_reset(peer);
+	close(STDERR_FILENO); /* we need that filedescriptor :D */
 
 	for (;;) {
 		struct timeval	 timeout;
 
 		if (resend_c >= ResetAfter) {
-			send_reset(udp_s);
+			resend_c = 0;
+			send_reset(udp_s, Msg_Reset);
 			msg_reset(peer);
 		} else if (msg_gettimeout(&timeout)) {
 			recv_message(udp_s, tcp_s, &timeout);
@@ -97,9 +102,8 @@ main(void)
 }
 
 void
-send_reset(const int s)
+send_reset(const int s, enum Msg msg)
 {
-	enum Msg	 msg = Msg_Reset;
 	fd_set		 fds;
 	struct timeval	 timeout;
 
@@ -111,7 +115,8 @@ send_reset(const int s)
 		} else {
 			FD_ZERO(&fds);
 			FD_SET(s, &fds);
-			select(OpenMax, &fds, NULL, NULL, &timeout);
+			if (select(&fds, NULL, &timeout) < 1)
+				continue;
 
 			switch (msg_recv(s)) {
 			case Msg_Reset:
@@ -149,18 +154,23 @@ recv_message(const int udp_s, const int tcp_s,
 			FD_SET(peer[i].s, &wfds);
 	}
 
-	if (select(OpenMax, &rfds, &wfds, NULL, timeout) < 1)
+	if (select(&rfds, &wfds, timeout) < 1)
 		return;
 
-	if (FD_ISSET(udp_s, &rfds))
-		msg_recv(udp_s);
+	if (FD_ISSET(udp_s, &rfds)) {
+		if (msg_recv(udp_s) == Msg_Reset) {
+			send_reset(udp_s, Msg_Reset_OK);
+			msg_reset(peer);
+			return;
+		}
+	}
 
 	if (FD_ISSET(tcp_s, &rfds)) {
 		struct sockaddr	 addr;
 		socklen_t	 addrlen = (socklen_t)sizeof(addr);
 		int		 s;
 
-		s = accept4(tcp_s, &addr, &addrlen, SOCK_NONBLOCK);
+		s = accept(tcp_s, &addr, &addrlen);
 		for (i = 0; i < PeersMax; ++i) {
 			if (peer[i].s < 0 && peer[i].free && s >= 0) {
 				peer[i].free = 0;

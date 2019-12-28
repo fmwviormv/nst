@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "msg.h"
 
@@ -183,7 +184,7 @@ msg_process(struct peer *const peers)
 	if (msg->seq != iseq)
 		return 0;
 
-	for (i = 0; i < PeersMax; data += msg->peer[i].size) {
+	for (i = 0; i < PeersMax; data += msg->peer[i++].size) {
 		const size_t	 bufsize = sizeof(peers[i].recv.buf);
 		const ssize_t	 off = peers[i].recv.off
 				    + peers[i].recv.size;
@@ -310,6 +311,9 @@ msg_reset(struct peer *const peers)
 	}
 
 	for (i = 0; i < PeersMax; ++i) {
+		if (peers[i].s >= 0)
+			close(peers[i].s);
+
 		peers[i].free = 1;
 		peers[i].dontsend = 1;
 		peers[i].s = -1;
@@ -397,9 +401,6 @@ msg_sendmsg(const int s, struct msg *const msg,
 	seq_t		 dnext;
 	int		 p;
 
-	if (msg->seq < 0)
-		return;
-
 	clock_gettime(CLOCK_MONOTONIC, &curtime);
 	td.tv_sec = curtime.tv_sec - last_sendtime.tv_sec;
 	td.tv_nsec = curtime.tv_nsec - last_sendtime.tv_nsec;
@@ -426,9 +427,11 @@ msg_sendmsg(const int s, struct msg *const msg,
 	buf[size++] = (uint8_t)(msgtime >> 8);
 	buf[size++] = (uint8_t)msgtime;
 
-	if (msg == NULL) {
+	if (msg == NULL)
 		buf[size++] = (uint8_t)reset_type;
-	} else {
+	else if (msg->seq < 0)
+		return;
+	else {
 		msg->lasttry = useq;
 		useq = (useq + 1) & 0xffff;
 		buf[size++] = (uint8_t)(msg->seq >> 8);

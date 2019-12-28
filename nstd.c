@@ -32,8 +32,9 @@
 #define socket(a)	socket(a.ai_family,a.ai_socktype,a.ai_protocol)
 #define bind(s,a)	bind(s, a.ai_addr, a.ai_addrlen)
 #define connect(s,a)	connect(s, a.ai_addr, a.ai_addrlen)
+#define select(r,w,t)	select(OpenMax, r, w, NULL, t)
 
-void		 send_reset(int);
+void		 send_reset(int, enum Msg);
 void		 recv_message(int, struct timeval *);
 void		 proc_message(void);
 
@@ -51,6 +52,8 @@ main(void)
 	for (i = 0; i < OpenMax; ++i)
 		if (i != STDERR_FILENO)
 			close(i);
+	for (i = 0; i < PeersMax; ++i)
+		peer[i].s = -1;
 #ifdef USE_UNVEIL
 	if (unveil("/", "") == -1)
 		err(1, "unveil");
@@ -67,13 +70,15 @@ main(void)
 	if (bind(udp_s, server_ai) == -1)
 		err(1, "bind");
 
+	send_reset(udp_s, Msg_Reset);
 	msg_reset(peer);
 
 	for (;;) {
 		struct timeval	 timeout;
 
 		if (resend_c >= ResetAfter) {
-			send_reset(udp_s);
+			resend_c = 0;
+			send_reset(udp_s, Msg_Reset);
 			msg_reset(peer);
 		} else if (msg_gettimeout(&timeout)) {
 			recv_message(udp_s, &timeout);
@@ -90,9 +95,8 @@ main(void)
 }
 
 void
-send_reset(const int s)
+send_reset(const int s, enum Msg msg)
 {
-	enum Msg	 msg = Msg_Reset;
 	fd_set		 fds;
 	struct timeval	 timeout;
 
@@ -104,7 +108,8 @@ send_reset(const int s)
 		} else {
 			FD_ZERO(&fds);
 			FD_SET(s, &fds);
-			select(OpenMax, &fds, NULL, NULL, &timeout);
+			if (select(&fds, NULL, &timeout) < 1)
+				continue;
 
 			switch (msg_recv(s)) {
 			case Msg_Reset:
@@ -135,16 +140,20 @@ recv_message(const int udp_s, struct timeval *const timeout)
 
 		if (peer[i].send.size < PeerMaxSend)
 			FD_SET(peer[i].s, &rfds);
-		if (peer[i].recv.size > 0 ||
-		    peer[i].recv.open || peer[i].recv.close)
+		if (peer[i].recv.size > 0 || peer[i].recv.close)
 			FD_SET(peer[i].s, &wfds);
 	}
 
-	if (select(OpenMax, &rfds, &wfds, NULL, timeout) < 1)
+	if (select(&rfds, &wfds, timeout) < 1)
 		return;
 
-	if (FD_ISSET(udp_s, &rfds))
-		msg_recv(udp_s);
+	if (FD_ISSET(udp_s, &rfds)) {
+		if (msg_recv(udp_s) == Msg_Reset) {
+			send_reset(udp_s, Msg_Reset_OK);
+			msg_reset(peer);
+			return;
+		}
+	}
 
 	for (i = 0; i < PeersMax; ++i) {
 		const int	 s = peer[i].s;
