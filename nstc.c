@@ -29,6 +29,9 @@
 
 #include "msg.h"
 
+#define socket(a)	socket(a.ai_family,a.ai_socktype,a.ai_protocol)
+#define bind(s,a)	bind(s, a.ai_addr, a.ai_addrlen)
+
 void		 send_reset(int);
 void		 recv_message(int, int, struct timeval *);
 void		 proc_message(void);
@@ -57,22 +60,14 @@ main(void)
 	for (i = 0; i < OpenMax; ++i)
 		if (i != STDERR_FILENO)
 			close(i);
-	udp_s = socket(
-	    client_ai.ai_family,
-	    client_ai.ai_socktype | SOCK_NONBLOCK,
-	    client_ai.ai_protocol);
-	if (udp_s == -1)
+	if ((udp_s = socket(client_ai)) == -1)
 		err(1, "socket");
-	if (bind(udp_s, client_ai.ai_addr, client_ai.ai_addrlen) == -1)
+	if (bind(udp_s, client_ai) == -1)
 		err(1, "bind");
 
-	tcp_s = socket(
-	    listen_ai.ai_family,
-	    listen_ai.ai_socktype | SOCK_NONBLOCK,
-	    listen_ai.ai_protocol);
-	if (tcp_s == -1)
+	if ((tcp_s = socket(listen_ai)) == -1)
 		err(1, "socket");
-	if (bind(tcp_s, listen_ai.ai_addr, listen_ai.ai_addrlen) == -1)
+	if (bind(tcp_s, listen_ai) == -1)
 		err(1, "bind");
 	if (listen(tcp_s, 2) == -1)
 		err(1, "listen");

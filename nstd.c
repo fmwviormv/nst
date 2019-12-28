@@ -29,6 +29,10 @@
 
 #include "msg.h"
 
+#define socket(a)	socket(a.ai_family,a.ai_socktype,a.ai_protocol)
+#define bind(s,a)	bind(s, a.ai_addr, a.ai_addrlen)
+#define connect(s,a)	connect(s, a.ai_addr, a.ai_addrlen)
+
 void		 send_reset(int);
 void		 recv_message(int, struct timeval *);
 void		 proc_message(void);
@@ -57,13 +61,9 @@ main(void)
 	for (i = 0; i < OpenMax; ++i)
 		if (i != STDERR_FILENO)
 			close(i);
-	udp_s = socket(
-	    server_ai.ai_family,
-	    server_ai.ai_socktype | SOCK_NONBLOCK,
-	    server_ai.ai_protocol);
-	if (udp_s == -1)
+	if ((udp_s = socket(server_ai)) == -1)
 		err(1, "socket");
-	if (bind(udp_s, server_ai.ai_addr, server_ai.ai_addrlen) == -1)
+	if (bind(udp_s, server_ai) == -1)
 		err(1, "bind");
 
 	msg_reset(peer);
@@ -222,19 +222,14 @@ proc_message(void)
 		if (s < 0 && peer[i].recv.open) {
 			peer[i].send.size = 0;
 
-			s = socket(
-			    connect_ai.ai_family,
-			    connect_ai.ai_socktype | SOCK_NONBLOCK,
-			    connect_ai.ai_protocol);
-			if (s == -1) {
+			if ((s = socket(connect_ai)) == -1) {
 				warn("socket");
 				peer[i].recv.open = 0;
 				peer[i].send.close = 1;
 				continue;
 			}
 
-			if (connect(s, connect_ai.ai_addr,
-			    connect_ai.ai_addrlen) != -1) {
+			if (connect(s, connect_ai) != -1) {
 				peer[i].free = 0;
 				peer[i].dontsend = 0;
 				peer[i].s = s;
