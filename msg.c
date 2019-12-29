@@ -31,6 +31,7 @@
 
 #define IN_HISTORY(seq)		(&ihist[(seq) & (MessageHistory - 1)])
 #define OUT_HISTORY(seq)	(&ohist[(seq) & (MessageHistory - 1)])
+#define DIFF16(x, y)		((0x10000 + (x) - (y)) & 0xffff)
 
 typedef int	 seq_t;
 
@@ -38,10 +39,6 @@ struct msg {
 	char		 delivered;
 	seq_t		 lasttry;
 	seq_t		 seq;
-	struct {
-		seq_t		 next;
-		uint8_t		 mask[ReportSize - 2];
-	} report;
 	struct {
 		char		 opened;
 		char		 closed;
@@ -71,7 +68,8 @@ msg_recv(const int s)
 	MD5_CTX		 md5_ctx;
 	uint8_t		 digest[MD5_DIGEST_LENGTH];
 	uint32_t	 msgtime, timediff;
-	seq_t		 msgseq, dnext;
+	seq_t		 msgseq, rnext;
+	uint8_t		*rmask;
 	struct msg	*msg;
 	int		 p;
 
@@ -125,15 +123,15 @@ msg_recv(const int s)
 
 	msgseq = buf[i++];
 	msgseq = (msgseq << 8) + buf[i++];
-	if (((0x10000 + msgseq - iseq) & 0xffff) >= MessageHistory)
+	if (DIFF16(msgseq, iseq) >= MessageHistory)
 		return Msg_Bad;
 
 	if ((msg = IN_HISTORY(msgseq))->seq == msgseq)
 		return Msg_Bad;
 
 	msg->seq = msgseq;
-	msg->report.next = ((seq_t)buf[i] << 8) + buf[i + 1];
-	memcpy(msg->report.mask, buf + i + 2, ReportSize - 2);
+	rnext = ((seq_t)buf[i] << 8) + buf[i + 1];
+	rmask = buf + i + 2;
 	i += ReportSize;
 	datasize = 0;
 
@@ -154,11 +152,10 @@ msg_recv(const int s)
 	}
 
 	memcpy(msg->data, buf + i, datasize);
-	dnext = msg->report.next;
 
 	for (p = 0; p < MessageHistory; ++p) {
 		struct msg	*const m = &ohist[p];
-		const seq_t	 diff = (dnext - m->seq) & 0xffff;
+		const seq_t	 diff = DIFF16(rnext, m->seq);
 
 		if (m->seq >= 0 && 0 < diff && diff <= MessageHistory)
 			m->delivered = 1;
@@ -166,10 +163,10 @@ msg_recv(const int s)
 
 	for (p = 0; p < ReportCount; ++p) {
 		const uint8_t	 bit = 1 << (7 - (p & 7));
-		const seq_t	 seq = (dnext + p + 1) & 0xffff;
+		const seq_t	 seq = (rnext + p + 1) & 0xffff;
 		struct msg	*const m = OUT_HISTORY(seq);
 
-		if ((msg->report.mask[p >> 3] & bit) && m->seq == seq)
+		if ((rmask[p >> 3] & bit) && m->seq == seq)
 			m->delivered = 1;
 	}
 
@@ -400,7 +397,7 @@ msg_sendmsg(const int s, struct msg *const msg,
 	MD5_CTX		 md5_ctx;
 	uint8_t		 digest[MD5_DIGEST_LENGTH];
 	struct timespec	 curtime, td;
-	seq_t		 dnext;
+	seq_t		 rnext;
 	int		 p;
 
 	clock_gettime(CLOCK_MONOTONIC, &curtime);
@@ -439,20 +436,20 @@ msg_sendmsg(const int s, struct msg *const msg,
 		buf[size++] = (uint8_t)(msg->seq >> 8);
 		buf[size++] = (uint8_t)msg->seq;
 
-		for (dnext = iseq; ; dnext = (dnext + 1) & 0xffff) {
-			const struct msg *const m = IN_HISTORY(dnext);
+		for (rnext = iseq; ; rnext = (rnext + 1) & 0xffff) {
+			const struct msg *const m = IN_HISTORY(rnext);
 
-			if (m->seq != dnext || !m->delivered)
+			if (m->seq != rnext || !m->delivered)
 				break;
 		}
 
-		buf[size++] = (uint8_t)(dnext >> 8);
-		buf[size++] = (uint8_t)dnext;
+		buf[size++] = (uint8_t)(rnext >> 8);
+		buf[size++] = (uint8_t)rnext;
 		memset(buf + size, 0, ReportSize - 2);
 
 		for (p = 0; p < ReportCount; ++p) {
 			const uint8_t	 bit = 1 << (7 - (p & 7));
-			const seq_t	 seq = dnext + p + 1;
+			const seq_t	 seq = rnext + p + 1;
 			const struct msg *const m = IN_HISTORY(seq);
 
 			if (m->seq == seq && m->delivered)
