@@ -9,8 +9,8 @@ enum {
 	HeaderSize = 6 + ReportSize + 2 * PeersMax,
 	MessageDataMaxSize = MessageMaxSize - HeaderSize,
 	PeerMaxSend = MessageDataMaxSize,
-	PeerRecvBufSize = 5 << 19,
-	MoveSize = 3 << 19,
+	PeerRecvBufSize = 3 << 19,
+	MoveSize = 1 << 19,
 	AlertSize = PeerRecvBufSize - (MessageHistory+1) * PeerMaxSend,
 	TimeDiffMax = 300,
 	SendFrequency = 40, /* minimum possible value is 2 */

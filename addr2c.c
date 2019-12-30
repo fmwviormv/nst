@@ -42,6 +42,8 @@ main(const int argc, const char *const *const argv)
 		errx(1, "bad args");
 	else if (FD_SETSIZE < OpenMax)
 		errx(1, "fd_set is too small");
+	else if (AlertSize <= 0)
+		errx(1, "recv buf is too small");
 
 	getaddr(argv[2], argv[3], argv[4]);
 	print(argv[1], ai->ai_addr, (size_t)ai->ai_addrlen);
