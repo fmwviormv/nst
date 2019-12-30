@@ -188,16 +188,15 @@ recv_message(const int udp_s, struct timeval *const timeout)
 			size_t		 size = peer[i].recv.size;
 			ssize_t		 nw;
 
-			nw = write(s, buf + off, size);
-			if (nw == -1) {
+			if (size == 0) {
+				close(s);
+				peer[i].free = 1;
+				peer[i].s = -1;
+			} else if ((nw = write(s, buf + off, size)) == -1) {
 				warn("write");
 				close(s);
 				peer[i].s = -1;
 				peer[i].send.close = 1;
-			} else if (nw == 0) {
-				close(s);
-				peer[i].free = 1;
-				peer[i].s = -1;
 			} else {
 				off += (size_t)nw;
 				size -= (size_t)nw;
