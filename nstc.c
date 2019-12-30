@@ -147,7 +147,7 @@ recv_message(const int udp_s, const int tcp_s,
 	for (i = 0; i < PeersMax; ++i) {
 		if (peer[i].free)
 			FD_SET(tcp_s, &rfds);
-		if (peer[i].s < 0)
+		if (peer[i].s == -1)
 			continue;
 
 		if (peer[i].send.size < PeerMaxSend)
@@ -174,7 +174,10 @@ recv_message(const int udp_s, const int tcp_s,
 
 		s = accept(tcp_s, &addr, &addrlen);
 		for (i = 0; i < PeersMax; ++i) {
-			if (peer[i].s < 0 && peer[i].free && s >= 0) {
+			if (peer[i].free && s != -1) {
+				if (peer[i].s != -1)
+					close(peer[i].s);
+
 				peer[i].free = 0;
 				peer[i].dontsend = 0;
 				peer[i].s = s;
@@ -183,7 +186,6 @@ recv_message(const int udp_s, const int tcp_s,
 				peer[i].recv.off = 0;
 				peer[i].recv.size = 0;
 				peer[i].send.open = 1;
-				peer[i].send.close = 0;
 				peer[i].send.size = 0;
 				break;
 			}
@@ -192,62 +194,56 @@ recv_message(const int udp_s, const int tcp_s,
 
 	for (i = 0; i < PeersMax; ++i) {
 		const int	 s = peer[i].s;
-		uint8_t		*buf;
-		ssize_t		 off, size;
 
-		if (s < 0)
+		if (s == -1)
 			continue;
 
 		if (FD_ISSET(s, &rfds)) {
-			buf = peer[i].send.buf;
+			uint8_t		*buf = peer[i].send.buf;
+			size_t		 off = peer[i].send.size;
+			ssize_t		 nr;
+
 			off = peer[i].send.size;
-			size = read(s, buf + off, PeerMaxSend - off);
-			if (size > 0)
-				peer[i].send.size += size;
-			else
-				switch (size == 0 ? ENOTCONN : errno) {
-				case EBADF:
-				case EIO:
-				case ENOTCONN:
-					close(s);
-					peer[i].s = -1;
-					peer[i].send.close = 1;
-					break;
-				default:
-					break;
-				}
+			nr = read(s, buf + off, PeerMaxSend - off);
+			if (nr == -1) {
+				close(s);
+				peer[i].s = -1;
+				peer[i].send.close = 1;
+			} else if (nr == 0) {
+				close(s);
+				peer[i].s = -1;
+				peer[i].send.close = 1;
+			} else
+				peer[i].send.size += (size_t)nr;
 		}
 
 		if (FD_ISSET(s, &wfds)) {
-			buf = peer[i].recv.buf;
-			off = peer[i].recv.off;
-			size = write(s, buf + off, peer[i].recv.size);
-			if (size >= 0) {
-				off += size;
-				size = peer[i].recv.size -= size;
+			uint8_t		*buf = peer[i].recv.buf;
+			size_t		 off = peer[i].recv.off;
+			size_t		 size = peer[i].recv.size;
+			ssize_t		 nw;
+
+			nw = write(s, buf + off, size);
+			if (nw == -1) {
+				close(s);
+				peer[i].s = -1;
+				peer[i].send.close = 1;
+			} else if (nw == 0) {
+				close(s);
+				peer[i].free = 1;
+				peer[i].s = -1;
+			} else {
+				off += (size_t)nw;
+				size -= (size_t)nw;
+
 				if (off >= MoveSize) {
 					memmove(buf, buf + off, size);
 					off = 0;
 				}
+
 				peer[i].recv.off = off;
-				if (size == 0 && peer[i].recv.close) {
-					close(s);
-					peer[i].s = -1;
-					peer[i].free = 1;
-				}
-			} else
-				switch (errno) {
-				case EBADF:
-				case EIO:
-				case ENETDOWN:
-				case EPIPE:
-					close(s);
-					peer[i].s = -1;
-					peer[i].send.close = 1;
-					break;
-				default:
-					break;
-				}
+				peer[i].recv.size = size;
+			}
 		}
 	}
 }

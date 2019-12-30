@@ -43,12 +43,12 @@ struct msg {
 		char		 opened;
 		char		 closed;
 		char		 blocked;
-		ssize_t		 size;
+		size_t		 size;
 	} peer[PeersMax];
 	uint8_t		 data[MessageDataMaxSize];
 };
 
-ssize_t		 msg_sendlimit(const struct peer *);
+size_t		 msg_sendlimit(const struct peer *);
 void		 msg_sendmsg(int, struct msg *, enum Msg,
 		    const struct addrinfo *);
 
@@ -64,7 +64,8 @@ msg_recv(const int s)
 {
 	const uint32_t	 curtime = (uint32_t)time(NULL);
 	unsigned char	 buf[DatagramMaxSize + MD5_DIGEST_LENGTH];
-	ssize_t		 i, size, datasize;
+	size_t		 i, size, datasize;
+	ssize_t		 nr;
 	MD5_CTX		 md5_ctx;
 	uint8_t		 digest[MD5_DIGEST_LENGTH];
 	uint32_t	 msgtime, timediff;
@@ -73,7 +74,10 @@ msg_recv(const int s)
 	struct msg	*msg;
 	int		 p;
 
-	size = recv(s, buf, sizeof(buf), 0);
+	if ((nr = recv(s, buf, sizeof(buf), 0)) == -1)
+		return Msg_Bad;
+
+	size = (size_t)nr;
 	if (size < 16 || size > DatagramMaxSize)
 		return Msg_Bad;
 
@@ -136,7 +140,7 @@ msg_recv(const int s)
 	datasize = 0;
 
 	for (p = 0; p < PeersMax; ++p) {
-		ssize_t		 x = buf[i++];
+		size_t		 x = buf[i++];
 
 		msg->peer[p].opened = (x & 128) != 0;
 		x = ((x & 127) << 8) + buf[i++];
@@ -184,19 +188,23 @@ msg_process(struct peer *const peers)
 		return 0;
 
 	for (i = 0; i < PeersMax; data += msg->peer[i++].size) {
-		const size_t	 bufsize = sizeof(peers[i].recv.buf);
-		const ssize_t	 off = peers[i].recv.off
-				    + peers[i].recv.size;
-		ssize_t		 size = msg->peer[i].size;
+		size_t		 off, size;
 
-		if (bufsize < (size_t)(off + size))
-			size = (ssize_t)bufsize - off;
+		if (msg->peer[i].opened) {
+			peers[i].recv.open = 1;
+			peers[i].recv.close = 0;
+			peers[i].recv.off = 0;
+			peers[i].recv.size = 0;
+		}
+
+		off = peers[i].recv.off + peers[i].recv.size;
+		size = sizeof(peers[i].recv.buf) - off;
+
+		if (msg->peer[i].size < size)
+			size = msg->peer[i].size;
 
 		memcpy(peers[i].recv.buf + off, data, size);
 		peers[i].recv.size += size;
-
-		if (msg->peer[i].opened)
-			peers[i].recv.open = 1;
 
 		if (msg->peer[i].closed)
 			peers[i].recv.close = 1;
@@ -213,14 +221,14 @@ msg_send(const int s, struct peer *const peers,
     const struct addrinfo *const to)
 {
 	struct msg	*const msg = OUT_HISTORY(oseq);
-	const ssize_t	 sendlimit = msg_sendlimit(peers);
-	ssize_t		 remaining = MessageDataMaxSize;
+	const size_t	 sendlimit = msg_sendlimit(peers);
+	size_t		 remaining = MessageDataMaxSize;
 	uint8_t		*data = msg->data;
 	int		 p;
 
 	if (msg->seq >= 0) {
 		for (p = 0; p < PeersMax; ++p)
-			if (peers[p].s < 0 && msg->peer[p].closed)
+			if (peers[p].s == -1 && msg->peer[p].closed)
 				peers[p].free = 1;
 	}
 
@@ -229,7 +237,7 @@ msg_send(const int s, struct peer *const peers,
 	oseq = (oseq + 1) & 0xffff;
 
 	for (p = 0; p < PeersMax; ++p) {
-		ssize_t		 size = peers[p].send.size;
+		size_t		 size = peers[p].send.size;
 		uint8_t		*src = peers[p].send.buf;
 
 		if (peers[p].dontsend) size = 0;
@@ -267,35 +275,25 @@ msg_resendold(const int s, const struct addrinfo *const to)
 	int		 i;
 	const struct msg *const oldest = OUT_HISTORY(oseq);
 	struct msg	*best = NULL;
-	seq_t		 diff;
 
 	for (i = 0; i < MessageHistory; ++i) {
 		struct msg	*const msg = &ohist[i];
 
-		if (msg->seq < 0 || msg->delivered)
-			continue;
-		else if (best == NULL)
+		if (msg->seq >= 0 && !msg->delivered && (best == NULL
+		    || DIFF16(best->lasttry, msg->lasttry) < 0x8000))
 			best = msg;
-		else {
-			diff = best->lasttry - msg->lasttry;
-			if (diff < 0) diff += 0x10000;
-			if (diff < 0x8000) best = msg;
-		}
 	}
 
 	if (best == NULL)
 		return 0;
-
-	diff = useq - best->lasttry;
-	if (diff < 0) diff += 0x10000;
-
-	if (diff >= MessageHistory / 2 ||
-	    (oldest->seq == oseq && !oldest->delivered)) {
+	else if (DIFF16(useq, best->lasttry) >= MessageHistory / 2)
 		msg_sendmsg(s, best, 0, to);
-		return 1;
-	}
+	else if (oldest->seq == oseq && !oldest->delivered)
+		msg_sendmsg(s, best, 0, to);
+	else
+		return 0;
 
-	return 0;
+	return 1;
 }
 
 void
@@ -310,7 +308,7 @@ msg_reset(struct peer *const peers)
 	}
 
 	for (i = 0; i < PeersMax; ++i) {
-		if (peers[i].s >= 0)
+		if (peers[i].s != -1)
 			close(peers[i].s);
 
 		peers[i].free = 1;
@@ -354,18 +352,18 @@ msg_gettimeout(struct timeval *const timeout)
 		return NULL;
 }
 
-ssize_t
+size_t
 msg_sendlimit(const struct peer *const peers)
 {
-	ssize_t		 low = 0, high = PeerMaxSend;
+	size_t		 low = 0, high = PeerMaxSend;
 
 	while (low < high) {
-		const ssize_t	 mid = (low + high) >> 1;
-		ssize_t		 size = 0;
+		const size_t	 mid = (low + high) >> 1;
+		size_t		 size = 0;
 		int		 i;
 
 		for (i = 0; i < PeersMax; ++i) {
-			const ssize_t	 t = peers[i].send.size;
+			const size_t	 t = peers[i].send.size;
 			if (!peers[i].dontsend)
 				size += t < mid ? t : mid;
 		}
@@ -393,7 +391,7 @@ msg_sendmsg(const int s, struct msg *const msg,
 	};
 	const uint32_t	 msgtime = (uint32_t)time(NULL);
 	unsigned char	 buf[DatagramMaxSize + MD5_DIGEST_LENGTH];
-	ssize_t		 i, size, datasize;
+	size_t		 i, size, datasize;
 	MD5_CTX		 md5_ctx;
 	uint8_t		 digest[MD5_DIGEST_LENGTH];
 	struct timespec	 curtime, td;
@@ -460,7 +458,7 @@ msg_sendmsg(const int s, struct msg *const msg,
 		datasize = 0;
 
 		for (p = 0; p < PeersMax; ++p) {
-			ssize_t		 x;
+			size_t		 x;
 
 			datasize += x = msg->peer[p].size;
 			x *= 3;
@@ -477,7 +475,7 @@ msg_sendmsg(const int s, struct msg *const msg,
 		size += datasize;
 
 		if (size < DatagramMaxSize) {
-			ssize_t		 r = DatagramMaxSize - size;
+			size_t		 r = DatagramMaxSize - size;
 
 			r = r < 15 ? r : 15;
 			r = (ssize_t)arc4random_uniform((uint32_t)r);

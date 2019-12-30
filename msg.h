@@ -31,14 +31,14 @@ struct peer {
 	struct {
 		char		 open;
 		char		 close;
-		ssize_t		 off;
-		ssize_t		 size;
+		size_t		 off;
+		size_t		 size;
 		uint8_t		 buf[MoveSize + PeerRecvBufSize];
 	} recv;
 	struct {
 		char		 open;
 		char		 close;
-		ssize_t		 size;
+		size_t		 size;
 		uint8_t		 buf[PeerMaxSend];
 	} send;
 };
