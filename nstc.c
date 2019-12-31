@@ -175,9 +175,6 @@ recv_message(const int udp_s, const int tcp_s,
 		s = accept(tcp_s, &addr, &addrlen);
 		for (i = 0; i < PeersMax; ++i) {
 			if (peer[i].free && s != -1) {
-				if (peer[i].s != -1)
-					close(peer[i].s);
-
 				peer[i].free = 0;
 				peer[i].dontsend = 0;
 				peer[i].s = s;

@@ -227,6 +227,8 @@ proc_message(void)
 		int		 s = peer[i].s;
 
 		if (peer[i].recv.open) {
+			if (peer[i].recv.close)
+				warnx("open/close %d", i);
 			if (peer[i].s != -1)
 				close(peer[i].s);
 
@@ -246,7 +248,7 @@ proc_message(void)
 				peer[i].s = -1;
 				peer[i].send.close = 1;
 			} else {
-				warnx("peer %d connected", s);
+				warnx("peer %d connected", i);
 				peer[i].free = 0;
 				peer[i].dontsend = 0;
 				peer[i].s = s;
