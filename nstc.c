@@ -184,9 +184,12 @@ recv_message(const int udp_s, const int tcp_s,
 				peer[i].recv.size = 0;
 				peer[i].send.open = 1;
 				peer[i].send.size = 0;
-				break;
+				s = -1;
 			}
 		}
+
+		if (s != -1)
+			close(s);
 	}
 
 	for (i = 0; i < PeersMax; ++i) {
