@@ -166,8 +166,8 @@ recv_message(const int udp_s, struct timeval *const timeout)
 			size_t		 off = peer[i].send.size;
 			ssize_t		 nr;
 
-			nr = read(s, buf + off, PeerMaxSend - off);
-			if (nr == -1 || nr == 0)
+			nr = recv(s, buf + off, PeerMaxSend - off, 0);
+			if (nr == -1)
 				s = -1;
 			else
 				peer[i].send.size += (size_t)nr;
@@ -180,7 +180,7 @@ recv_message(const int udp_s, struct timeval *const timeout)
 			ssize_t		 nw;
 
 			if (size == 0 ||
-			    (nw = write(s, buf + off, size)) == -1)
+			    (nw = send(s, buf + off, size, 0)) == -1)
 				s = -1;
 			else {
 				off += (size_t)nw;

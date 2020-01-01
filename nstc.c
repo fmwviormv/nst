@@ -21,7 +21,6 @@
 #include <sys/types.h>
 
 #include <err.h>
-#include <errno.h>
 #include <netdb.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -183,6 +182,7 @@ recv_message(const int udp_s, const int tcp_s,
 				peer[i].recv.off = 0;
 				peer[i].recv.size = 0;
 				peer[i].send.open = 1;
+				peer[i].send.close = 0;
 				peer[i].send.size = 0;
 				s = -1;
 			}
@@ -200,8 +200,8 @@ recv_message(const int udp_s, const int tcp_s,
 			size_t		 off = peer[i].send.size;
 			ssize_t		 nr;
 
-			nr = read(s, buf + off, PeerMaxSend - off);
-			if (nr == -1 || nr == 0)
+			nr = recv(s, buf + off, PeerMaxSend - off, 0);
+			if (nr == -1)
 				s = -1;
 			else
 				peer[i].send.size += (size_t)nr;
@@ -214,7 +214,7 @@ recv_message(const int udp_s, const int tcp_s,
 			ssize_t		 nw;
 
 			if (size == 0 ||
-			    (nw = write(s, buf + off, size)) == -1)
+			    (nw = send(s, buf + off, size, 0)) == -1)
 				s = -1;
 			else {
 				off += (size_t)nw;
