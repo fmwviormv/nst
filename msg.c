@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Ali Farzanrad <ali_farzanrad@riseup.net>
+ * Copyright (c) 2019, 2020 Ali Farzanrad <ali_farzanrad@riseup.net>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted.
@@ -225,12 +225,6 @@ msg_send(const int s, struct peer *const peers,
 	size_t		 remaining = MessageDataMaxSize;
 	uint8_t		*data = msg->data;
 	int		 p;
-
-	if (msg->seq >= 0) {
-		for (p = 0; p < PeersMax; ++p)
-			if (peers[p].s == -1 && msg->peer[p].closed)
-				peers[p].free = 1;
-	}
 
 	msg->delivered = 0;
 	msg->seq = oseq;

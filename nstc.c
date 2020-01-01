@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Ali Farzanrad <ali_farzanrad@riseup.net>
+ * Copyright (c) 2019, 2020 Ali Farzanrad <ali_farzanrad@riseup.net>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted.
@@ -193,45 +193,30 @@ recv_message(const int udp_s, const int tcp_s,
 	}
 
 	for (i = 0; i < PeersMax; ++i) {
-		const int	 s = peer[i].s;
+		int		 s = peer[i].s;
 
-		if (s == -1)
-			continue;
-
-		if (FD_ISSET(s, &rfds)) {
+		if (s != -1 && FD_ISSET(s, &rfds)) {
 			uint8_t		*buf = peer[i].send.buf;
 			size_t		 off = peer[i].send.size;
 			ssize_t		 nr;
 
-			off = peer[i].send.size;
 			nr = read(s, buf + off, PeerMaxSend - off);
-			if (nr == -1) {
-				close(s);
-				peer[i].s = -1;
-				peer[i].send.close = 1;
-			} else if (nr == 0) {
-				close(s);
-				peer[i].s = -1;
-				peer[i].send.close = 1;
-			} else
+			if (nr == -1 || nr == 0)
+				s = -1;
+			else
 				peer[i].send.size += (size_t)nr;
 		}
 
-		if (FD_ISSET(s, &wfds)) {
+		if (s != -1 && FD_ISSET(s, &wfds)) {
 			uint8_t		*buf = peer[i].recv.buf;
 			size_t		 off = peer[i].recv.off;
 			size_t		 size = peer[i].recv.size;
 			ssize_t		 nw;
 
-			if (size == 0) {
-				close(s);
-				peer[i].free = 1;
-				peer[i].s = -1;
-			} else if ((nw = write(s, buf + off, size)) == -1) {
-				close(s);
-				peer[i].s = -1;
-				peer[i].send.close = 1;
-			} else {
+			if (size == 0 ||
+			    (nw = write(s, buf + off, size)) == -1)
+				s = -1;
+			else {
 				off += (size_t)nw;
 				size -= (size_t)nw;
 
@@ -244,14 +229,36 @@ recv_message(const int udp_s, const int tcp_s,
 				peer[i].recv.size = size;
 			}
 		}
+
+		if (s == -1 && peer[i].s != -1) {
+			close(peer[i].s);
+			peer[i].s = -1;
+			peer[i].send.close = 1;
+
+			if (peer[i].recv.close) {
+				peer[i].free = 1;
+				peer[i].recv.close = 0;
+			}
+		}
 	}
 }
 
 void
 proc_message(void)
 {
+	int		 i;
+
 	if (!msg_process(peer))
 		return;
 
 	while (msg_process(peer)) ;
+
+	for (i = 0; i < PeersMax; ++i) {
+		int		 s = peer[i].s;
+
+		if (s == -1 && peer[i].recv.close) {
+			peer[i].free = 1;
+			peer[i].recv.close = 0;
+		}
+	}
 }

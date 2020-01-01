@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Ali Farzanrad <ali_farzanrad@riseup.net>
+ * Copyright (c) 2019, 2020 Ali Farzanrad <ali_farzanrad@riseup.net>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted.
@@ -158,46 +158,31 @@ recv_message(const int udp_s, struct timeval *const timeout)
 	}
 
 	for (i = 0; i < PeersMax; ++i) {
-		const int	 s = peer[i].s;
+		int		 s = peer[i].s;
+		errno = 0;
 
-		if (s == -1)
-			continue;
-
-		if (FD_ISSET(s, &rfds)) {
+		if (s != -1 && FD_ISSET(s, &rfds)) {
 			uint8_t		*buf = peer[i].send.buf;
 			size_t		 off = peer[i].send.size;
 			ssize_t		 nr;
 
 			nr = read(s, buf + off, PeerMaxSend - off);
-			if (nr == -1) {
-				warn("read");
-				close(s);
-				peer[i].s = -1;
-				peer[i].send.close = 1;
-			} else if (nr == 0) {
-				close(s);
-				peer[i].s = -1;
-				peer[i].send.close = 1;
-			} else
+			if (nr == -1 || nr == 0)
+				s = -1;
+			else
 				peer[i].send.size += (size_t)nr;
 		}
 
-		if (FD_ISSET(s, &wfds)) {
+		if (s != -1 && FD_ISSET(s, &wfds)) {
 			uint8_t		*buf = peer[i].recv.buf;
 			size_t		 off = peer[i].recv.off;
 			size_t		 size = peer[i].recv.size;
 			ssize_t		 nw;
 
-			if (size == 0) {
-				close(s);
-				peer[i].free = 1;
-				peer[i].s = -1;
-			} else if ((nw = write(s, buf + off, size)) == -1) {
-				warn("write");
-				close(s);
-				peer[i].s = -1;
-				peer[i].send.close = 1;
-			} else {
+			if (size == 0 ||
+			    (nw = write(s, buf + off, size)) == -1)
+				s = -1;
+			else {
 				off += (size_t)nw;
 				size -= (size_t)nw;
 
@@ -208,6 +193,18 @@ recv_message(const int udp_s, struct timeval *const timeout)
 
 				peer[i].recv.off = off;
 				peer[i].recv.size = size;
+			}
+		}
+
+		if (s == -1 && peer[i].s != -1) {
+			warn("peer %d closed", i);
+			close(peer[i].s);
+			peer[i].s = -1;
+			peer[i].send.close = 1;
+
+			if (peer[i].recv.close) {
+				peer[i].free = 1;
+				peer[i].recv.close = 0;
 			}
 		}
 	}
@@ -226,15 +223,9 @@ proc_message(void)
 	for (i = 0; i < PeersMax; ++i) {
 		int		 s = peer[i].s;
 
-		if (peer[i].recv.open) {
+		if (s == -1 && peer[i].recv.open) {
 			if (peer[i].recv.close)
 				warnx("open/close %d", i);
-			if (peer[i].s != -1)
-				close(peer[i].s);
-
-			peer[i].free = 0;
-			peer[i].recv.open = 0;
-			peer[i].send.size = 0;
 
 			if ((s = socket(connect_ai)) == -1)
 				warn("socket");
@@ -244,15 +235,20 @@ proc_message(void)
 				s = -1;
 			}
 
-			if (s == -1) {
-				peer[i].s = -1;
+			peer[i].free = 0;
+			peer[i].s = s;
+			peer[i].recv.open = 0;
+			peer[i].send.size = 0;
+
+			if (s == -1)
 				peer[i].send.close = 1;
-			} else {
+			else
 				warnx("peer %d connected", i);
-				peer[i].free = 0;
-				peer[i].dontsend = 0;
-				peer[i].s = s;
-			}
+		}
+
+		if (s == -1 && peer[i].recv.close) {
+			peer[i].free = 1;
+			peer[i].recv.close = 0;
 		}
 	}
 }
